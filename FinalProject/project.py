@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.core.numeric import NaN
 import pandas as pd
 import math
 from pandas.core.frame import DataFrame
@@ -27,14 +28,19 @@ def main():
     
     brith.csv
     COL 2, 3 :
-        COL 3 - COL 2 = 乾乳期), 胎次
+        COL 2 - COL 3(前一胎次) = 乾乳期
+    COL 4, 5 : 犢牛1, 犢牛2
+        insufficient, drop()
+    COL 6 : 母牛體重
+    COL 7, 9 : 登錄日期, 胎次 
         repeat, drop()
+    COL 8 : 計算胎次
+        meaningless, drop()
     COL 10 : 分娩難易度
     COL 11, 12: 犢牛體型, 犢牛性 
         insufficient, drop()
     COL 13 : 酪農場代號
         repeat, drop()
-
     
     bread.csv
 
@@ -82,37 +88,58 @@ def main():
     '''
 
     # # construct train data
-    x_train = pd.DataFrame(data_report.iloc[:, 0])# ID
+    x_train = pd.DataFrame()
 
+    # COL 3
     temp = data_report.iloc[:, 2]
     temp = temp.replace([[3, 4, 5], [6, 7, 8], [9, 10, 11], [12, 1, 2]], ['spring', 'summer', 'autumn', 'winter'])
     x_train = pd.concat([x_train, temp], axis=1) # axis=1 means colume
 
-    x_train = pd.concat([x_train, data_report.iloc[:, 3]], axis=1)
-    x_train = pd.concat([x_train, data_report.iloc[:, 8]], axis=1)
-    x_train = pd.concat([x_train, data_report.iloc[:, 9]], axis=1)
-    y_train = pd.concat([x_train, data_report.iloc[:, 10]], axis=1)
-    
-    temp1 = data_report.iloc[:, 11]
-    temp2 = data_report.iloc[:, 18]
+
+    x_train = pd.concat([x_train, data_report['4']], axis=1)
+    x_train = pd.concat([x_train, data_report['9']], axis=1)
+    x_train = pd.concat([x_train, data_report['10']], axis=1)
+    x_train = pd.concat([x_train, data_report['14']], axis=1)
+    x_train = pd.concat([x_train, data_report['18']], axis=1)
+    y_train = pd.concat([x_train, data_report['11']], axis=1)
+
+
+    # birth_interval
+    temp1 = data_report['12'].copy()
+    temp2 = data_report['19'].copy()
     i1 = np.where(temp1.isna())[0]
     i2 = np.where(temp2.isna())[0]
-    temp1.values[i1] = temp1.values[i1 + 1] # 補缺項, temporary method
-    temp2.values[i2] = data_report.values[i2, 7] # 補缺項, 第一次分娩 - 出生日期
-    date1 = [datetime.strptime(i, "%Y/%m/%d %H:%M") for i in temp1]
-    date2 = [datetime.strptime(i, "%Y/%m/%d %H:%M") for i in temp2]
-    birth_interval = [(i - j).days for i, j in zip(date1, date2)]
-    x_train = pd.concat([x_train, pd.DataFrame(birth_interval, columns=['birth_interval'])], axis=1)
 
-    x_train = pd.concat([x_train, data_report.iloc[:, 13]], axis=1)
-    x_train = pd.concat([x_train, data_report.iloc[:, 17]], axis=1)
+    # 補缺項
+    temp1.iloc[i1] = temp1.iloc[i1[0] + 1] , # temporary method
+    temp2.iloc[i2] = data_report.iloc[i2, 7] # 第一次分娩 - 出生日期
 
-    temp = data_birth.iloc[:, 10]
-    i = np.where(temp.notna())[0]
-    temp1 = data_birth.iloc[:, 0]
-    ii = temp1.drop_duplicates()
-    print(i.shape)
-    print(ii.shape)
+    birth_interval = day_interval(temp1, temp2, 'birth_interval')
+    x_train = pd.concat([x_train, birth_interval], axis=1)
+
+    # temp = data_birth.iloc[:, 10]
+    # i = np.where(temp.notna())[0]
+    # temp1 = data_birth.iloc[:, 0]
+    # ii = temp1.drop_duplicates()
+    # print(i.shape)
+
+    data_birth_copy = data_birth # copy
+    data_birth_copy = data_birth_copy.sort_values(by=['1', '9']) # sort
+    index = np.where(~data_birth_copy['1'].duplicated())[0] # find all cow
+
+    temp = data_birth_copy.iloc[:, 2].shift()
+    temp.values[index] = NaN # teporary method, 第一胎次乾乳期 = NaN
+    dry_interval = day_interval(data_birth_copy.iloc[:, 1], temp, 'dry_interval')
+    # 補缺項
+    index = [a or b for a, b in zip(dry_interval['dry_interval'] < 0, dry_interval['dry_interval'] > 5*30)]
+    dry_interval = dry_interval.drop(dry_interval.loc[index].index) # 不合理的值直接排除 (保留 0~150天)
+    dry_interval = dry_interval.replace(NaN, dry_interval.mean()) # teporary method, NaN(第一胎次乾乳期) = 平均值
+
+    temp = pd.DataFrame(np.full(data_report.shape[0], dry_interval.mean()), columns=['dry_interval'])
+    x_train = pd.concat([x_train, temp], axis=1)
+    index = [a and b for a, b in zip(data_report['5'] == 124326, data_report['9'] == 1)]
+    print(x_train)  
+    
 
     # # 補缺項
 
@@ -137,5 +164,19 @@ def main():
 
     # print('MSE of BLR = {e1}, MSE of MLR= {e2}.' .format(e1=, e2=, )
 
+# day intervel of two Series with string type
+def day_interval(temp1, temp2, name) :
+    date1 = pd.to_datetime(temp1)
+    date2 = pd.to_datetime(temp2)
+    #date1 = [datetime.strptime(i, "%Y/%m/%d %H:%M") for i in temp1]
+    #date2 = [datetime.strptime(i, "%Y/%m/%d %H:%M") for i in temp2] 
+    return pd.DataFrame([(a - b).days for a, b in zip(date1, date2)], columns=[name])
+
 if __name__ == '__main__':
     main()
+
+    # df2 = pd.DataFrame(np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]]), columns=['a', 'b', 'c'])
+    # print(df2)
+    # f = pd.Series([0, 2])
+    # df2.iloc[f, [0, 2]] = [[10, 10], [10, 10]]
+    # print(df2)
