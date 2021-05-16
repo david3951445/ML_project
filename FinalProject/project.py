@@ -104,7 +104,7 @@ def main():
     y_train = pd.concat([x_train, data_report['11']], axis=1)
 
 
-    # birth_interval
+    # # birth_interval
     temp1 = data_report['12'].copy()
     temp2 = data_report['19'].copy()
     i1 = np.where(temp1.isna())[0]
@@ -117,29 +117,51 @@ def main():
     birth_interval = day_interval(temp1, temp2, 'birth_interval')
     x_train = pd.concat([x_train, birth_interval], axis=1)
 
-    # temp = data_birth.iloc[:, 10]
-    # i = np.where(temp.notna())[0]
-    # temp1 = data_birth.iloc[:, 0]
-    # ii = temp1.drop_duplicates()
-    # print(i.shape)
 
-    data_birth_copy = data_birth # copy
-    data_birth_copy = data_birth_copy.sort_values(by=['1', '9']) # sort
-    index = np.where(~data_birth_copy['1'].duplicated())[0] # find all cow
+    # # # dry_interval
+    # # 先透過 data_birth 計算乾乳期
+    data_birth_copy = data_birth.copy() # copy
+    data_birth_copy = data_birth_copy.sort_values(by=['1', '9']) # sort 牛編號, 胎次
+    i_cow_b = ~data_birth_copy.duplicated(subset=['1']) # find all cow
 
-    temp = data_birth_copy.iloc[:, 2].shift()
-    temp.values[index] = NaN # teporary method, 第一胎次乾乳期 = NaN
+    temp = data_birth_copy.iloc[:, 2].shift() # 原資料的乾乳時間是下個胎次的
+    temp.loc[i_cow_b] = NaN # teporary method, 第一胎次乾乳期 = NaN
     dry_interval = day_interval(data_birth_copy.iloc[:, 1], temp, 'dry_interval')
+ 
     # 補缺項
-    index = [a or b for a, b in zip(dry_interval['dry_interval'] < 0, dry_interval['dry_interval'] > 5*30)]
-    dry_interval = dry_interval.drop(dry_interval.loc[index].index) # 不合理的值直接排除 (保留 0~150天)
-    dry_interval = dry_interval.replace(NaN, dry_interval.mean()) # teporary method, NaN(第一胎次乾乳期) = 平均值
+    data_birth_copy = pd.concat([data_birth_copy, dry_interval, pd.DataFrame(i_cow_b, columns=['i_cow_b'])], axis=1)  
+    index = [a or b for a, b in zip(data_birth_copy['dry_interval'] < 0, data_birth_copy['dry_interval'] > 5*30)]
+    data_birth_copy = data_birth_copy.drop(data_birth_copy.loc[index].index) # 不合理的值直接排除 (保留 0~150天)
+    mean = np.mean(data_birth_copy['dry_interval'])
+    temp_cow_dry = data_birth_copy.fillna(mean) # teporary method, NaN(第一胎次乾乳期) = 平均值
 
-    temp = pd.DataFrame(np.full(data_report.shape[0], dry_interval.mean()), columns=['dry_interval'])
-    x_train = pd.concat([x_train, temp], axis=1)
-    index = [a and b for a, b in zip(data_report['5'] == 124326, data_report['9'] == 1)]
-    print(x_train)  
+    # # 把 birth 的資料融入 report
+    # 索引操作
+    data_report_copy = data_report.copy()
+    data_report_copy = data_report_copy.sort_values(by=['5', '9']) # sort 牛編號, 胎次
+    i_cd_b = temp_cow_dry.set_index(keys = ['1', '9']) # 將牛編號, 胎次轉為 index
+    i_cd_b = i_cd_b.drop(i_cd_b.columns.drop(['dry_interval']), axis=1) # 保留 index, dry_interval
+    i_cd_r = data_report_copy.set_index(keys = ['5', '9']) # 將牛編號, 胎次轉為 index
+    i_cd_r = i_cd_r.drop(i_cd_r.columns, axis=1) # 保留 index 就好
     
+    # 補缺項
+    for a, b in i_cd_b.index :
+        try :
+            i_cd_r.loc[(a, b), 'dry_interval'] = i_cd_b.loc[(a, b), 'dry_interval'].iloc[0]
+        except :
+            continue # 如果birth有report沒有的牛，跳過 (經測試，只有一隻)
+    i_cd_r['dry_interval'] = i_cd_r['dry_interval'].fillna(mean) # teporary method, 如果report有birth沒有的牛 乾乳期 = 平均值
+
+    # 塞進 x_train
+    array = i_cd_r.to_numpy()
+    temp = pd.DataFrame(array, columns=['dry_interval'])
+    temp.loc[data_report_copy.index.values, ['dry_interval']] = array
+    x_train = pd.concat([x_train, temp], axis=1)
+
+    print(x_train)
+    
+    #test = pd.DataFrame(a)
+    x_train.to_csv('test.csv')
 
     # # 補缺項
 
@@ -170,7 +192,7 @@ def day_interval(temp1, temp2, name) :
     date2 = pd.to_datetime(temp2)
     #date1 = [datetime.strptime(i, "%Y/%m/%d %H:%M") for i in temp1]
     #date2 = [datetime.strptime(i, "%Y/%m/%d %H:%M") for i in temp2] 
-    return pd.DataFrame([(a - b).days for a, b in zip(date1, date2)], columns=[name])
+    return pd.DataFrame([(a - b).days for a, b in zip(date1, date2)], columns=[name], index=temp1.index) # preserver temp1.index
 
 if __name__ == '__main__':
     main()
