@@ -21,7 +21,7 @@
 ## 問題分析
 - 適合的模型?
     - 監督式學習、回歸模型
-        - BLR、MLR、KNN、CART、NN
+        - BLR、MLR、KNN、CART、GBM、NN
 ## 軟體架構
 Python, Tensorflow, Keras
 ### 資料前處理
