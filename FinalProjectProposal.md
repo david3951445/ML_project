@@ -21,7 +21,9 @@
 ## 問題分析
 - 適合的模型?
     - 監督式學習、回歸模型
-        - BLR、MLR、KNN、CART、GBM、NN
+        - BLR(Bayesian linear regression) 、MLR(Maximum Likelihood regression)、
+        - Ridge Regression、CART(Classification and Regression Trees)、
+        - GBM(Gradient Boosting Machine)、NN(Neural Network)
 ## 軟體架構
 Python, Tensorflow, Keras
 ### 資料前處理
