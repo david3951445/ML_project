@@ -2,17 +2,17 @@ import numpy as np
 from numpy.core.numeric import NaN
 import pandas as pd
 from pandas.core.frame import DataFrame
-import os 
-
-from datetime import datetime
+from sklearn.preprocessing import StandardScaler
+from sklearn import preprocessing
 from pandas.core.reshape.concat import concat
+from datetime import datetime
+import os 
 
 # ignore warning : This TensorFlow binary is optimized with oneAPI ...
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 def main():
     ''' load data '''
-
     data_report = pd.read_csv('data/report.csv')
     data_submission = pd.read_csv('data/submission.csv')
     data_birth = pd.read_csv('data/birth.csv')
@@ -21,7 +21,7 @@ def main():
     
     '''
     # Data pre-processing #
-    important data : season of calv-ing,  氣候,  泌乳高峰第幾天 , stocking  rate
+    important data : season of calving,  氣候,  泌乳高峰第幾天(dry interval) , stocking  rate
     一開始的六個星期中奶量不斷提高，一直到每日25至60升，然後不斷下降
     
     brith.csv
@@ -42,10 +42,9 @@ def main():
     
     bread.csv
 
-
     report.csv
     COL 2 : 年
-        drop
+        drop()
     COL 3 : 月
     x_train.replace([3, 4, 5], 'spring')
     x_train.replace([6, 7, 8], 'summer')
@@ -84,8 +83,6 @@ def main():
     spec.csv (health)
  
     '''
-
-    # # construct train data
     x_train = pd.DataFrame()
 
     # # COL 3
@@ -94,12 +91,12 @@ def main():
     x_train = pd.concat([x_train, temp], axis=1) # axis=1 means colume
 
     # # COL 4, 9, 10, 11, 14, 18
-    x_train = pd.concat([x_train, data_report['4']], axis=1)
-    x_train = pd.concat([x_train, data_report['9']], axis=1)
-    x_train = pd.concat([x_train, data_report['10']], axis=1)
+    x_train = pd.concat([x_train, data_report['4']], axis=1) # 農場代號
+    x_train = pd.concat([x_train, data_report['9']], axis=1) # 胎次
+    x_train = pd.concat([x_train, data_report['10']], axis=1) # 泌乳天數
     x_train = pd.concat([x_train, data_report['11']], axis=1) # y_train
-    x_train = pd.concat([x_train, data_report['14']], axis=1)
-    x_train = pd.concat([x_train, data_report['18']], axis=1)
+    x_train = pd.concat([x_train, data_report['14']], axis=1) # 月齡
+    x_train = pd.concat([x_train, data_report['18']], axis=1) # 配種次數
 
     # # birth_interval
     temp1 = data_report['12'].copy()
@@ -113,6 +110,7 @@ def main():
 
     birth_interval = day_interval(temp1, temp2, 'birth_interval')
     x_train = pd.concat([x_train, birth_interval], axis=1)
+
 
     # # # dry_interval
     # # 先透過 data_birth 計算乾乳期
@@ -131,7 +129,8 @@ def main():
     mean = np.mean(data_birth_copy['dry_interval'])
     temp_cow_dry = data_birth_copy.fillna(mean) # teporary method, NaN(第一胎次乾乳期) = 平均值
 
-    # # 把 birth 的資料融入 report
+
+    # # 把 birth 的資料放入 report
     # 索引操作
     data_report_copy = data_report.copy()
     data_report_copy = data_report_copy.sort_values(by=['5', '9']) # sort 牛編號, 胎次
@@ -154,10 +153,11 @@ def main():
     temp.loc[data_report_copy.index.values, ['dry_interval']] = array
     x_train = pd.concat([x_train, temp], axis=1)
 
-    # # one hot
+
+    ''' one hot '''
     x_train = pd.get_dummies(x_train)
-    
-    # # split x_test from x_train
+
+    ''' split x_train into x_train, x_test, y_train '''
     index = np.where(x_train['11'].isna())[0]
     temp = x_train.loc[index]
 
@@ -165,10 +165,15 @@ def main():
     x_train = x_train.dropna() # 保證最後不會有 NaN
     y_train = x_train.pop('11') # train output data
     x_test = temp.drop(['11'], axis=1) # test input data
-    print(x_train.shape) 
-    print(y_train.shape)
-    print(x_test.shape) 
-    # x_train.to_csv('test.csv')
+
+    ''' normalize '''
+    scale = StandardScaler() #z-scaler物件
+    x_train = pd.DataFrame(scale.fit_transform(x_train), columns=x_train.keys())
+    x_test = pd.DataFrame(scale.fit_transform(x_test), columns=x_test.keys())
+
+    # print(x_train) 
+    # print(y_train.shape)
+    # print(x_test) 
 
     ''' ML model training '''
     # 打在這
@@ -187,6 +192,24 @@ def day_interval(temp1, temp2, name) :
     #date1 = [datetime.strptime(i, "%Y/%m/%d %H:%M") for i in temp1]
     return pd.DataFrame([(a - b).days for a, b in zip(date1, date2)], columns=[name], index=temp1.index) # preserver temp1.index
 
+def normalize(df, cols):
+    """Normalize a dataframe with specified columns
+
+    Keyword arguments:
+    df -- the input dataframe (pandas.DataFrame)
+    cols -- the specified columns to be normalized (list)
+
+    """
+    train_set_normalized = df.copy()
+    for col in cols:
+        all_col_data = train_set_normalized[col].copy()
+        # print(all_col_data)
+        mu = all_col_data.mean()
+        std = all_col_data.std()
+        
+        z_score_normalized = (all_col_data - mu) / std
+        train_set_normalized[col] = z_score_normalized
+    return train_set_normalized
 
 if __name__ == '__main__':
     main()
