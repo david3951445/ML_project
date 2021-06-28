@@ -1,0 +1,12 @@
+每個版本新增的東西
+
+v2
+col: 9, 10, 14, 18, birth_interval, dry_interval, season, farm
+
+v3
+normaliztion
+
+v5
+加入機器學習模型code但整體無法運行，仍須測試
+將第一次乾乳期中的NaN = mean改成NaN = 365*2
+新增特徵tamp_H, temp_L
