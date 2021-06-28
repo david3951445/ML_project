@@ -8,6 +8,20 @@ from pandas.core.reshape.concat import concat
 from datetime import datetime
 import os 
 
+from sklearn.linear_model import Ridge, LinearRegression
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.neighbors import KNeighborsRegressor
+import scipy.stats as st
+from sklearn import model_selection
+from sklearn.model_selection import train_test_split
+from keras.models import Sequential
+from keras.layers import Dense,Dropout,BatchNormalization,LSTM
+from keras import optimizers
+from keras.optimizers import Adam
+from keras import backend as K
+from keras.wrappers.scikit_learn import KerasRegressor
+# import xgboost as xgb from sklearn.model_selection import GridSearchCV
+
 # ignore warning : This TensorFlow binary is optimized with oneAPI ...
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -87,8 +101,29 @@ def main():
 
     # # COL 3
     temp = data_report.iloc[:, 2]
-    temp = temp.replace([[3, 4, 5], [6, 7, 8], [9, 10, 11], [12, 1, 2]], ['spring', 'summer', 'autumn', 'winter'])
-    x_train = pd.concat([x_train, temp], axis=1) # axis=1 means colume
+    temp1 = temp.replace([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2], ['spring', 'spring', 'spring',\
+                                      'summer', 'summer', 'summer',\
+                                      'autumn', 'autumn', 'autumn',\
+                                      'winter', 'winter', 'winter'])
+    x_train = pd.concat([x_train, temp1], axis=1) # axis=1 means colume
+
+    # # temperature
+    data_report_copy = data_report.copy()
+    temp = data_report_copy.set_index(keys = ['4'])
+    M = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    # 最高溫
+    A = [17, 17, 19, 24, 26, 29, 32, 31, 29, 26, 22, 19]
+    B = [20, 19, 22, 26, 29, 31, 32, 32, 31, 28, 25, 21]
+    C = [25, 26, 28, 30, 32, 32, 33, 32, 32, 31, 28, 25]
+    high = get_temperature(temp, M, A, B, C, 'temp_H')
+    x_train = pd.concat([x_train, high], axis=1) # axis=1 means colume
+    
+    # 最低溫
+    A = [12, 12, 14, 18, 21, 24, 25, 25, 23, 21, 17, 13]
+    B = [13, 13, 15, 19, 23, 25, 26, 26, 24, 21, 18, 15]
+    C = [14, 15, 18, 21, 23, 25, 25, 25, 24, 22, 19, 15]
+    low = get_temperature(temp, M, A, B, C, 'temp_L')
+    x_train = pd.concat([x_train, low], axis=1) # axis=1 means colume
 
     # # COL 4, 9, 10, 11, 14, 18
     x_train = pd.concat([x_train, data_report['4']], axis=1) # 農場代號
@@ -115,10 +150,15 @@ def main():
     # # # dry_interval
     # # 先透過 data_birth 計算乾乳期
     data_birth_copy = data_birth.copy() # copy
+    data_report_copy = data_report.copy()
+
     data_birth_copy = data_birth_copy.sort_values(by=['1', '9']) # sort 牛編號, 胎次
     i_cow_b = ~data_birth_copy.duplicated(subset=['1']) # find all cow
-
     temp = data_birth_copy.iloc[:, 2].shift() # 原資料的乾乳時間是下個胎次的
+
+    # temp1 = data_report_copy.set_index(keys = ['5'])
+    # temp2 = data_birth_copy.loc[i_cow_b, '1'] 
+    # temp.loc[i_cow_b] = temp1.loc[temp2, '8'].iloc[0]
     temp.loc[i_cow_b] = NaN # teporary method, 第一胎次乾乳期 = NaN
     dry_interval = day_interval(data_birth_copy.iloc[:, 1], temp, 'dry_interval')
  
@@ -127,7 +167,7 @@ def main():
     index = [a or b for a, b in zip(data_birth_copy['dry_interval'] < 0, data_birth_copy['dry_interval'] > 5*30)]
     data_birth_copy = data_birth_copy.drop(data_birth_copy.loc[index].index) # 不合理的值直接排除 (保留 0~150天)
     mean = np.mean(data_birth_copy['dry_interval'])
-    temp_cow_dry = data_birth_copy.fillna(mean) # teporary method, NaN(第一胎次乾乳期) = 平均值
+    temp_cow_dry = data_birth_copy.fillna(365*2) # teporary method, NaN(第一胎次乾乳期) = 平均值
 
 
     # # 把 birth 的資料放入 report
@@ -170,20 +210,73 @@ def main():
     scale = StandardScaler() #z-scaler物件
     x_train = pd.DataFrame(scale.fit_transform(x_train), columns=x_train.keys())
     x_test = pd.DataFrame(scale.fit_transform(x_test), columns=x_test.keys())
-
-    # print(x_train) 
-    # print(y_train.shape)
+    
+    print(x_train.shpae)
+    print(y_train.shape)
     # print(x_test) 
 
-    ''' ML model training '''
-    # 打在這
+    # ''' ML model training '''
+    # data_number = len(x_train.iloc[:, 0])
+    # feature_number = len(x_train.iloc[0, :])
 
-    ''' ML model pridict '''
-    # # input x_test, output y_predict
-    # y_predict = model.predict(x_test)
+    # test_number = len(x_test.iloc[:, 0])
+
+    # '''scikit learn
+    # model = DecisionTreeRegressor()  # 選擇Model
+    # model.fit(x_train, y_train)  # 訓練
+    # y_predictions = model.predict(x_test)  # 預測
+    # '''
+
+    # # NN
+
+    # # 建立Sequential
+    # neurons=256
+    # model=Sequential()
+    # model.add(Dense(neurons, input_dim=feature_number, bias_initializer='normal', activation='relu'))
+    # model.add(Dense(neurons, bias_initializer='normal', activation='relu'))
+    # model.add(Dropout(0.1))
+    # model.add(Dense(1), bias_initializer='normal')
+
+    # # 編譯(損失函數,評估標準:RMSE 優化器:adam.adamax)
+    # model.compile(loss=rmse,optimizer="adam",metrics=[rmse])
+    # #model.compile(loss=rmse,optimizer='Adamax',metrics=[rmse])
+    # #model.compile(loss=rmse,optimizer='Nadam',metrics=[rmse])
+    # #neurons=[64, 128, 256]
+    # #param_grid = dict(neurons=neurons)
+    # #model=GridSearchCV(estimator=model, param_grid=param_grid, cv=2, n_jobs=3, verbose=True)
+
+    # # 訓練
+    # model = KerasRegressor(build_fn=model, epochs=100, batch_size=128, verbose=1)
+    # model.fit(x_train, y_train)
+
+    # '''
+    # # xgboost model
+    # xgboost = xgb.XGBRegressor()
+    # param_grid = [
+    # {'nthread': [4], 'objective':['reg:squarederror'], 'learning_rate':[0.05, 0.08, 0.1],
+    # 'max_depth': [4, 5, 6], 'min_child_weight': [3, 4], 'silent': [1], 'subsample': [0.7],
+    # 'colsample_bytree': [0.7], 'n_estimators': [150, 300, 500]}]
+    # model = GridSearchCV(xgboost, param_grid, cv=2, n_jobs=10, verbose=True)
+    # model.fit(x_train,y_train) # 訓練
+    # '''
+
+    # ''' ML model pridict '''
+    # # # input x_test, output y_predict
+    # # y_predict = model.predict(x_test)
+    # # data_submission['1'] = y_predict
+    # # data_submission.to_csv('out.csv', index=False)
+    # y_predict = model.predict(x_test)  # 預測
     # data_submission['1'] = y_predict
     # data_submission.to_csv('out.csv', index=False)
 
+
+def get_temperature(data, M, A, B, C, str) :
+    temp1 = data.loc['A', '3'].replace(M, A)
+    temp2 = data.loc['B', '3'].replace(M, B)
+    temp3 = data.loc['C', '3'].replace(M, C)
+
+    temp4 = pd.concat([temp1, temp2, temp3])
+    return pd.DataFrame(temp4.values, columns=[str])
 
 # day intervel of two Series with string type
 def day_interval(temp1, temp2, name) :
@@ -210,6 +303,10 @@ def normalize(df, cols):
         z_score_normalized = (all_col_data - mu) / std
         train_set_normalized[col] = z_score_normalized
     return train_set_normalized
+
+# 誤差計算
+def rmse(y_pred,y_true):
+    return K.sqrt(K.mean(K.square(y_pred-y_true)))
 
 if __name__ == '__main__':
     main()
